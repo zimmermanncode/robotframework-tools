@@ -39,7 +39,7 @@ from pygments.token import Token
 
 from robot.errors import DataError
 
-from robottools import TestRobot, TestLibraryInspector
+from robottools import TestRobot
 from robottools.testrobot import Keyword
 
 from IPython.terminal.prompts import Prompts
@@ -132,7 +132,8 @@ class RobotShell(ShellBase, Prompts):
 
         * Overrides method from IPython's ``Prompts`` base class.
         """
-        tokens = super(RobotShell, self).in_prompt_tokens(cli=cli)
+        # Current IPython (9) neither passes nor accepts `cli`
+        tokens = super(RobotShell, self).in_prompt_tokens()
         if not self.label:
             return tokens
         return [(Token.Prompt, '[%s]\n' % self.label)] + tokens
@@ -140,7 +141,8 @@ class RobotShell(ShellBase, Prompts):
     def Import(self, libname, args=None, alias=None):
         library = self.robot.Import(libname, args, alias=alias)
         self.register_robot_keyword_magics(alias or libname, library)
-        return TestLibrary(library._library)
+        # (with the robot's context, for the library's keywords)
+        return TestLibrary(library._library, context=self.robot._context)
 
     def Run(self, path, **options):
         result = self.robot.Run(path, debug=self.robot_debug_mode,
@@ -156,6 +158,7 @@ class RobotShell(ShellBase, Prompts):
             del self.line_magics['%s.%s' % (
               self.robot_magic_name, self.robot.name)]
             del self.robots[self.robot.name]
+            self.robot.shutdown()  # ends the robot's Robot Framework session
             self.robot = None
             return self.Robot()
 
@@ -163,9 +166,15 @@ class RobotShell(ShellBase, Prompts):
         return self.Robot(extname=extname)
 
     def register_robot_keyword_magics(self, libalias, library):
-        for keyword in TestLibraryInspector(library):
+        for keyword in library:  # (a robottools.testrobot.TestLibrary)
             keywordname = keyword.name.replace(' ', '')
             for name in keywordname, '%s.%s' % (libalias, keywordname):
+                if name in self.line_magics \
+                  and name not in self.robot_keyword_magics:
+                    # don't shadow robotshell's or IPython's own magics
+                    # (OperatingSystem's `Run` replaced %Run, and
+                    #  unregister_robot_magics() then deleted it)
+                    continue
                 keyword = Keyword(keyword._handler, self.robot._context)
 
                 keyword_magic = KeywordMagic(keyword, robot_shell=self)

@@ -19,70 +19,75 @@
 
 """robottools.testrobot.variables
 
-Wrapping Robot Framework's Variables for use with TestRobot.
+Robot Framework's Variables of a TestRobot's live session.
 
 .. moduleauthor:: Stefan Zimmermann <zimmermann.code@gmail.com>
 """
-__all__ = ['variablesclass']
+__all__ = ['Variables']
 
-import sys
+import re
 
 from robot.errors import DataError
+from robot.libraries.BuiltIn import BuiltIn
+
+_VARIABLE = re.compile(r'[$@&]\{([^{}\[\]=]+)\}')
 
 
-def variablesclass(base, extra_getters=None):
-    """Creates custom Variables wrapper classes
+class Variables(object):
+    """The Variables of a TestRobot, looked up in its live session,
        with support for ``extra_getters`` (extra lookup sources),
-       which should work like dicts and support ``$/@/&{...}`` style keys.
+       which are called with ``${...}`` style keys.
     """
-    class Variables(base):
-        """Base class for creating custom Variables wrapper classes
-           via :func:`robottools.testrobot.variables.variablesclass`
-           with support for ``extra_getters`` (extra lookup sources).
+    def __init__(self, context, extra_getters=None):
+        self._context = context
+        self._extra_getters = list(extra_getters or ())
+
+    def __contains__(self, key):
+        missing = object()
+        return self._context.submit(
+            lambda: BuiltIn().get_variable_value(key, missing)
+        ) is not missing
+
+    def __getitem__(self, key):
+        """Also looks up ``self._extra_getters``.
         """
-        _extra_getters = extra_getters or ()
-
-        def __getitem__(self, key):
-            """Also looks up ``self._extra_getters``.
-            """
+        if key in self:
+            return self._context.submit(
+                lambda: BuiltIn().get_variable_value(key))
+        for getter in self._extra_getters:
             try:
-                return base.__getitem__(self, key)
-            except DataError:
-                if self._extra_getters:
-                    for getter in self._extra_getters:
-                        try:
-                            return getter(key)
-                        except (LookupError, DataError):
-                            pass
-                raise
+                return getter(key)
+            except (LookupError, DataError):
+                pass
+        raise DataError("Variable '%s' not found." % key)
 
-        if not issubclass(base, object):
-            #==> PY2 old style base class from Robot 2.8
-            #==> __getattribute__ below not used
-            @property
-            def current(self):
-                return self
+    def __setitem__(self, key, value):
+        self._context.submit(lambda: self._context.set_variable(key, value))
 
-        def __getattribute__(self, name):
-            """Makes sure that ``self.current`` is handled correctly
-               according to the Variables wrapping approach.
-            """
-            try:
-                value = base.__getattribute__(self, name)
-            except AttributeError:
-                # Robot 2.8: just return self as `current`
-                if name == 'current':
-                    return self
-                raise
-            # Robot 2.9: wrap `current`'s class with same options
-            if (name == 'current'
-                # (if not done yet)
-                and type(value).__module__ != __name__
-                ):
-                value.__class__ = variablesclass(value.__class__,
-                  extra_getters=self._extra_getters)
-            return value
+    def fill(self, strings):
+        """Set the variables used in `strings` that are not defined yet
+           from ``self._extra_getters``, so Robot can substitute them.
+        """
+        if not self._extra_getters:
+            return
+        for name in set(_VARIABLE.findall(' '.join(strings))):
+            key = '${%s}' % name
+            if key in self:
+                continue
+            for getter in self._extra_getters:
+                try:
+                    value = getter(key)
+                except (LookupError, DataError):
+                    continue
+                self[key] = value
+                break
 
-        _parents = []
+    @property
+    def current(self):
+        # Like Robot's own Variables (as used by robotshell)
+        return self
 
-    return Variables
+    def as_dict(self):
+        """Get all variables as ``{'${name}': value}`` dict.
+        """
+        return self._context.submit(lambda: dict(BuiltIn().get_variables()))

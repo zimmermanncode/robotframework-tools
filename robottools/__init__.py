@@ -24,40 +24,45 @@ Python Tools for Robot Framework and Test Libraries.
 .. moduleauthor:: Stefan Zimmermann <zimmermann.code@gmail.com>
 """
 
-from zetup import find_zetup_config
-from zetup.version import Version
+# from zetup import find_zetup_config
+# from zetup.version import Version
 
-zfg = find_zetup_config(__name__)
-
-__distribution__ = zfg.DISTRIBUTION.find(__path__[0])
-__description__ = zfg.DESCRIPTION
-
-__version__ = zfg.VERSION
-
-__requires__ = zfg.REQUIRES.checked
-__extras__ = zfg.EXTRAS
+# zfg = find_zetup_config(__name__)
+#
+# __distribution__ = zfg.DISTRIBUTION.find(__path__[0])
+# __description__ = zfg.DESCRIPTION
+#
+# __version__ = zfg.VERSION
+#
+# __requires__ = zfg.REQUIRES.checked
+# __extras__ = zfg.EXTRAS
 
 ## __notebook__ = zfg.NOTEBOOKS['README']
 
-try:
-    import robot
-except ImportError as exc:
-    raise ImportError(
-        "%s depends on robotframework but import failed with: %s"
-        % (repr(__distribution__), exc))
-if Version(robot.__version__) < '2.8.7':
-    raise __import__('pkg_resources').VersionConflict(
-        "%s needs robotframework>=2.8.7 but found %s in %s"
-        % (repr(__distribution__), robot.__version__, repr(robot)))
+# try:
+#     import robot
+# except ImportError as exc:
+#     raise ImportError(
+#         "%s depends on robotframework but import failed with: %s"
+#         % (repr(__distribution__), exc))
+# if Version(robot.__version__) < '2.8.7':
+#     raise __import__('pkg_resources').VersionConflict(
+#         "%s needs robotframework>=2.8.7 but found %s in %s"
+#         % (repr(__distribution__), robot.__version__, repr(robot)))
 
 from robottools.library import *
 from robottools.library.keywords import *
 from robottools.library.session import SessionHandler
 from robottools.library.context import *
 
-from robottools.library.inspector import *
 from robottools.libdoc import libdoc
 
+# TestRobot works again, by running a live Robot Framework session (robottools.testrobot.context).
 from robottools.testrobot import *
 
-from .utils import *
+# Not imported any more, so the core imports on Robot Framework 7:
+# the inspector needs RF internals that RF 7 removed, and .utils needs `modeled`,
+# which does not build on Python 3.14+.
+# ----
+# from robottools.library.inspector import *
+# from .utils import *

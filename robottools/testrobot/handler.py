@@ -19,81 +19,40 @@
 
 """robottools.testrobot.handler
 
-Making ``robot.running.handlers`` work better with
-:class:`robottools.TestRobot`.
+Making keyword calls from :class:`robottools.TestRobot` work with Python objects.
 
 .. moduleauthor:: Stefan Zimmermann <zimmermann.code@gmail.com>
 """
 __all__ = ['Handler']
 
-from six import with_metaclass
-
-from moretools import isstring, isdict, dictitems
+from robot.utils import escape
 
 
-class HandlerMeta(type):
+class Handler(object):
+    """Turns the Python arguments of a keyword call
+       into the arguments for ``BuiltIn.run_keyword()``.
 
-    def __getitem__(cls, handlercls):
-        return type('Handler', (cls, handlercls), {
-            '_resolve_arguments': handlercls.resolve_arguments,
-        })
-
-
-class Handler(with_metaclass(HandlerMeta, object)):
-    """A wrapper base class for instances of classes
-    from ``robot.running.handlers``.
-
-    * Implements a custom :meth:`.resolve_arguments`,
-      which supports passing arbitrary python objects
-      as keyword argument values.
+    - Strings are Robot data, so ``'${variable}'`` substitution still works
+      (or literal text with ``resolve=False``).
+    - Other objects are passed unstringified,
+      as test variables set via the `set_variable` callable,
+      because ``run_keyword()`` takes named arguments only as 'name=value' strings.
     """
-    # HACK
-    def resolve_arguments(self, args_and_kwargs, variables=None):
-        """More Pythonic argument handling for interactive
-        :class:`robottools.testrobot.keyword.Keyword` calls.
+    def __init__(self, set_variable, resolve=True):
+        self.set_variable = set_variable
+        self.resolve = resolve
 
-        Original ``resolve_arguments`` methods from ``robot.running.handlers``
-        expect as first argument a single list of Keyword arguments
-        coming from an RFW script::
-
-           ['arg0', 'arg1', ..., 'name=value', ...]
-
-        So there is no chance to pass unstringified named argument values.
-        Only unstringified positional arguments are possible.
-
-        This wrapper method takes a normal Python `args_and_kwargs` pair
-        instead as first argument::
-
-           (arg0, arg1, ...), {name: value, ...}
-
-        It resolves the named arguments stringified via the original method
-        but returns the original Python values::
-
-           [arg0, arg1, ...], [(name, value), ...]
-
-        Only strings are untouched.
-        So RFW ``'...${variable}...'`` substitution still works.
+    def resolve_arguments(self, args, kwargs):
+        """Get the ``run_keyword()`` argument list
+           for the Python `args` sequence and `kwargs` dict.
         """
-        posargs, kwargs = args_and_kwargs
-        rfwargs = list(posargs)
-        # prepare 'key=value' strings for original RFW method
-        for name, value in dictitems(kwargs):
-            if not isstring(value):
-                value = repr(value)
-            rfwargs.append(u'%s=%s' % (name, value))
-        posargs, rfwkwargs = self._resolve_arguments(rfwargs, variables)
-        # and replace values with original non-string objects after resolving
-        kwargslist = []
-        if isdict(rfwkwargs):
-            # ==> RFW < 3.0
-            rfwkwargs = dictitems(rfwkwargs)
-        for name, rfwvalue in rfwkwargs:
-            value = kwargs[name]
-            if isstring(value):
-                value = rfwvalue
-            kwargslist.append((name, value))
-        if hasattr(self, 'run'):
-            # ==> RFW < 3.0
-            return posargs, dict(kwargslist)
-        # RFW >= 3.0
-        return posargs, kwargslist
+        def arg(key, value):
+            if isinstance(value, str):
+                return value if self.resolve else escape(value)
+            variable = '${__testrobot_%s}' % key
+            self.set_variable(variable, value)
+            return variable
+
+        return ([arg(index, value) for index, value in enumerate(args)]
+                + ['%s=%s' % (name, arg(name, value))
+                   for name, value in kwargs.items()])

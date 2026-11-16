@@ -86,7 +86,7 @@ class SessionHandlerMeta(type):
         keywordname = 'open%s_' + cls.meta.identifier_name
         if suffix:
             keywordname += '_' + suffix
-        argspec = inspect.getargspec(func)
+        argspec = inspect.getfullargspec(func)
 
         def open_session(self, *args, **kwargs):
             """Open an unnamed {singular}.

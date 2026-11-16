@@ -27,13 +27,22 @@ __all__ = ['TestLibrary']
 
 from six.moves.urllib_parse import quote as urlquote
 
+import tempfile
+from pathlib import Path
+
+from robot.libdoc import libdoc
+
 import robottools.testrobot
-from robottools import libdoc
 
 
 class TestLibrary(robottools.testrobot.TestLibrary):
     def _repr_html_(self):
-        html = libdoc.html(self.name)
+        # Robot Framework's libdoc writes HTML only to files.
+        # (Libraries with Markdown docs, like Collections in RF 7.5, need `markdown`.)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'libdoc.html'
+            libdoc(self.name, str(path), format='HTML', quiet=True)
+            html = path.read_text(encoding='utf-8')
         return """
           <iframe width="100%%" height="100%%" frameborder="0"
                   src="data:text/html;charset=utf-8,%s"

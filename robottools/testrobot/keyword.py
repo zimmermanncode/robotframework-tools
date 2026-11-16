@@ -23,146 +23,61 @@
 """
 __all__ = ['Keyword']
 
-import sys
-from six import reraise, text_type as unicode
-
-from robot.errors import HandlerExecutionFailed, ExecutionFailed
-import robot.running
-try: # Robot 3.0
-    from robot.running.steprunner import StepRunner
-    from robot.running.statusreporter import StatusReporter
-except ImportError:
-    StatusReporter = None
-else:
-    _get_failure = StatusReporter._get_failure
-try: # Robot 2.9
-    from robot.running.keywordrunner import NormalRunner
-except ImportError:
-    NormalRunner = None
-
-from robottools.library.inspector.keyword import KeywordInspector
-
-from .handler import Handler
+from robot.errors import HandlerExecutionFailed, RobotError
 
 
-def debug_fail(context, exc_info=None):
+def debug_fail(failure):
     """Handles a Keyword FAIL in debugging mode
-       by writing some extra output to the given Robot `context`
-       and re-raising the exception that caused the FAIL.
+       by re-raising the exception that caused the FAIL.
+
+    - `failure` is the exception that Robot Framework raised for the FAIL.
+      Robot raises it while handling the keyword's own exception,
+      which is therefore found in its ``__context__`` chain.
+    - Does nothing for other kinds of failures.
     """
-    # Get the Exception raised by the Keyword
-    exc_type, exc, traceback = exc_info or sys.exc_info()
-    context.output.fail("%s: %s" % (exc_type.__name__, exc))
-    context.output.debug("Re-raising exception...")
-    # Search the oldest traceback frame of the actual Keyword code
-    # (Adapted from robot.utils.error.PythonErrorDetails._get_traceback)
-    while traceback:
-        try:
-            modulename = traceback.tb_frame.f_globals['__name__']
-        except KeyError:
-            break
-        if modulename.startswith('robot.running.'):
-            traceback = traceback.tb_next
-        else:
-            break
-    reraise(exc_type, exc, traceback)
+    if not isinstance(failure, HandlerExecutionFailed):
+        return
+    exc = failure
+    while isinstance(exc, RobotError) and exc.__context__ is not None:
+        exc = exc.__context__
+    raise exc
 
 
-if NormalRunner: # Robot 2.9
-    #HACK
-    class DebugNormalRunner(NormalRunner):
-        """On-demand-replacement (monkey patch)
-        for :class:`robot.runnning.keywordrunner.NormalRunner`
-        to catch the exception that caused a Keyword FAIL for debugging.
-        """
-        def _get_and_report_failure(self):
-            debug_fail(self._context)
+class Keyword(object):
+    """A Keyword of a :class:`robottools.TestRobot`'s Test Library,
+       callable like a Python function.
 
-
-if StatusReporter: # Robot 3.0
-    #HACK
-    def debug_get_failure(self, exc_type, exc, traceback, context):
-        """On-demand-replacement (monkey patch) for
-        :meth:`robot.running.statusreporter.StatusReporter._get_failure`
-        to catch the exception that caused a Keyword FAIL for debugging.
-        """
-        if exc is None:
-            return None
-
-        debug_fail(context, (exc_type, exc, traceback))
-
-
-class DebugKeyword(robot.running.Keyword):
-    """Derived :class:`robot.running.Keyword` runner
-       that catches the exception that caused a Keyword FAIL
-       for debugging.
+    - Strings are Robot data (``'${variable}'`` substitution works),
+      other arguments are passed as they are,
+      and the Keyword's return value is returned.
     """
-
-    # Robot 2.8
-    def _report_failure(self, context):
-        debug_fail(context)
-
-    # Robot >= 2.9
-    def __enter__(self):
-        if NormalRunner:
-            # Robot 2.9
-            # HACK: monkey-patch robot.running's NormalRunner
-            # to catch the Keyword exception
-            robot.running.keywordrunner.NormalRunner = DebugNormalRunner
-        if StatusReporter:
-            # Robot 3.0
-            # HACK: monkey-patch robot.running's StatusReporter._get_failure()
-            # to catch the Keyword exception
-            robot.running.statusreporter.StatusReporter._get_failure \
-                = debug_get_failure
-
-    def __exit__(self, *exc):
-        if NormalRunner:
-            robot.running.keywordrunner.NormalRunner = NormalRunner
-        if StatusReporter:
-            robot.running.statusreporter.StatusReporter._get_failure \
-                = _get_failure
-
-
-class Keyword(KeywordInspector):
     def __init__(self, handler, context, debug=False):
-        KeywordInspector.__init__(self, handler)
-        if not isinstance(handler, Handler):
-            handler.__class__ = Handler[handler.__class__]
+        """Initialize with the Keyword's `handler` info
+           (library name, keyword name, argument specs, documentation),
+           as collected by :meth:`.context.Context.keywords`,
+           and the :class:`.context.Context` of a TestRobot.
+        """
+        self._handler = handler
         self._context = context
         self._debug = debug
+        self.libname, self.name, self.arguments, self.doc = handler
+
+    @property
+    def longname(self):
+        return '%s.%s' % (self.libname, self.name)
 
     @property
     def __doc__(self):
-        return KeywordInspector.__doc__.fget(self)
+        return '%r\n\n%s' % (self, self.doc)
 
     def __call__(self, *args, **kwargs):
-        # HACK: normally, RFW's Keyword argument resolvers expect
-        # a plain list of arguments coming from an RFW script,
-        # which has limitations, as described in the .handler.Handler wrapper,
-        # which is patched later into the actual Keyword function runner
-        # by self._context.get_runner(),
-        # and which expects the (args, kwargs) pair instead
-        if self._debug:
-            runner = DebugKeyword(self.name, args=(args, kwargs))
-        else:
-            runner = robot.running.Keyword(self.name, args=(args, kwargs))
-        # HACK: `with` registers Context to EXECUTION_CONTEXTS
-        # and Output to LOGGER:
-        with self._context as ctx:
-            try:
-                # Robot >= 2.9
-                if (StatusReporter or NormalRunner) and isinstance(
-                        runner, DebugKeyword
-                ):
-                    with runner:
-                        return runner.run(ctx)
-
-                return runner.run(ctx)
-            # Robot 2.8: raised by robot.running.Keyword:
-            except HandlerExecutionFailed:
-                pass
+        return self._context.call(
+            self.longname, args, kwargs, debug=self._debug)
 
     def debug(self, *args, **kwargs):
         keyword = Keyword(self._handler, self._context, debug=True)
         return keyword(*args, **kwargs)
+
+    def __repr__(self):
+        return '[Keyword] %s [ %s ]' % (
+            self.longname, ' | '.join(self.arguments))

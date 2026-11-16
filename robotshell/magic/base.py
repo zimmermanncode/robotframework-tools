@@ -27,6 +27,10 @@ from robotshell.base import ShellBase
 
 
 class RobotMagicBase(ShellBase):
+    # Robot variables (${x}) in magic lines are for Robot; IPython would expand {x}.
+    # (The attribute `IPython.core.magic.no_var_expand` sets on functions.)
+    _ipython_magic_no_var_expand = True
+
     def __init__(self, robot_shell):
         ShellBase.__init__(self, robot_shell.shell)
         self.robot_shell = robot_shell

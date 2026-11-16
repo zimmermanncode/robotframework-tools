@@ -31,7 +31,7 @@ __all__ = [
 from six import with_metaclass
 from itertools import chain
 
-import zetup
+# import zetup
 from moretools import camelize
 
 from path import Path
@@ -60,7 +60,7 @@ class TestLibraryImportError(ImportError):
     pass
 
 
-class TestLibraryInspectorMeta(zetup.meta):
+class TestLibraryInspectorMeta(type):  # zetup.meta):
 
     def __getattr__(self, libname):
         try:
@@ -73,8 +73,9 @@ class TestLibraryInspectorMeta(zetup.meta):
 
 
 class TestLibraryInspector(
-  with_metaclass(TestLibraryInspectorMeta, zetup.object)
-  ):
+    metaclass=TestLibraryInspectorMeta
+    # with_metaclass(TestLibraryInspectorMeta, zetup.object)
+    ):
 
     def __init__(self, lib, *args):
         if isinstance(lib, TestLibraryInspector):
