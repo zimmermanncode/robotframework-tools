@@ -36,10 +36,8 @@ from itertools import chain
 from moretools import isstring, dictitems
 
 from robot.utils import NormalizedDict
-from robot.variables import is_scalar_var
+from robot.variables import search_variable
 from robot.libraries.BuiltIn import BuiltIn, RobotNotRunningError
-
-from robottools.utils import normdictdata
 
 from .utils import KeywordName
 from .errors import InvalidKeywordOption, KeywordNotDefined
@@ -141,7 +139,7 @@ class KeywordDecoratorType(object):
                 pass
             else:
                 for key, value in list(dictitems(kwargs)):
-                    if is_scalar_var(key):
+                    if search_variable(key).is_scalar_variable():
                         kwargs[variables[key]] = kwargs.pop(key)
             return func(self, *args, **kwargs)
 
@@ -155,7 +153,8 @@ class KeywordDecoratorType(object):
         """
         def method(self, *args, **kwargs):
             kwargs = NormalizedDict(kwargs)
-            return func(self, *args, **normdictdata(kwargs))
+            # Its internal dict holds the normalized keys.
+            return func(self, *args, **kwargs._data)
 
         method.__name__ = func.__name__
         return method
@@ -210,7 +209,7 @@ class KeywordDecoratorType(object):
         try:
             argspec = func.argspec
         except AttributeError:
-            argspec = inspect.getargspec(func)
+            argspec = inspect.getfullargspec(func)
 
         # Use at least one wrapper to make attribute assignments always work
         def func(self, *args, **kwargs):

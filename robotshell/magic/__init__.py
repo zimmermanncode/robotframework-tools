@@ -30,7 +30,7 @@ __all__ = [
 
 import sys
 
-from IPython.core.magic import Magics, magics_class, line_magic
+from IPython.core.magic import Magics, magics_class, line_magic, no_var_expand
 
 from robottools.testrobot.output import LOG_LEVELS
 
@@ -77,7 +77,7 @@ class RobotMagics(with_metaclass(RobotMagicsMeta, Magics)):
                 if mode in ['on', 'yes', 'true', '1']:
                     value = True
                 elif mode.lower() in ['off', 'no', 'false', '0']:
-                    value = True
+                    value = False  # was True: switching off switched on
                 else:
                     raise ValueError(mode)
             setattr(self.robot_shell, attrname, value)
@@ -98,6 +98,8 @@ class RobotMagics(with_metaclass(RobotMagicsMeta, Magics)):
     def robot_cell_magic(self, mode=None):
         pass
 
+    # ${...} in the arguments is for Robot; IPython would expand {...}:
+    @no_var_expand
     @line_magic
     def Import(self, libname_and_args_as_alias):
         try:
@@ -116,6 +118,7 @@ class RobotMagics(with_metaclass(RobotMagicsMeta, Magics)):
             args = None
         return self.robot_shell.Import(libname, args, alias=alias)
 
+    @no_var_expand
     @line_magic
     def Run(self, options_and_path):
         options, sources = RFW.parse_arguments(

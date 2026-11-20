@@ -23,131 +23,44 @@
 """
 __all__ = ['Output']
 
-import re
 import sys
-import logging
+import threading
 
 from robot.output import LOGGER, LEVELS as LOG_LEVELS
-from robot.output.loggerhelper import AbstractLogger
-from robot.output.pyloggingconf import RobotHandler
-try: # Robot 3.0
-    from robot.output.listeners import LibraryListeners
-except ImportError:
-    LibraryListeners = None
-
-from .highlighting import Highlighter
+from robot.output.loggerapi import LoggerApi
 
 
-LOG_LEVELS_MAX_WIDTH = max(map(len, LOG_LEVELS))
+class Output(LoggerApi):
+    """Prints the log messages of a TestRobot's Keywords.
 
-
-LOG_LEVEL_COLORS = {
-  'FAIL': 'red',
-  'ERROR': 'red',
-  'WARN': 'yellow',
-  }
-
-
-class LoggingHandler(RobotHandler):
-    def __enter__(self):
-        #HACK: Adapted from robot.output.pyloggingconf.initialize()
-        self._old_logging_raiseExceptions = logging.raiseExceptions
-        logging.raiseExceptions = False
-        logging.getLogger().addHandler(self)
-
-    def __exit__(self, *exc):
-        logging.getLogger().removeHandler(self)
-        logging.raiseExceptions = self._old_logging_raiseExceptions
-        del self._old_logging_raiseExceptions
-
-
-class Output(AbstractLogger):
-    def __init__(self, log_level='INFO'):
-        AbstractLogger.__init__(self, level=log_level)
-        self.logging_handler = LoggingHandler()
-        if LibraryListeners is not None:
-            # Robot 3.0
-            self.library_listeners = LibraryListeners(log_level)
-        # streams to be used internally for writing messages
-        # - see self.__enter__() and self.message()
-        self._out = self._err = None
+    - Registered with Robot Framework's global ``LOGGER``,
+      so it gets the messages of all TestRobots in the process
+      and prints only those logged in its own TestRobot's thread.
+    - Prints to the stream that was ``sys.stdout`` on creation:
+      ``sys.stdout`` itself is captured by Robot while a Keyword runs.
+    """
+    def __init__(self, log_level='INFO', stream=None):
+        self.log_level = log_level
+        self.stream = stream or sys.stdout
+        self.thread = None  # set by the TestRobot's Context
+        self.quiet = False  # set while the TestRobot itself sets variables
+        LOGGER.register_logger(self)
 
     def set_log_level(self, level):
-        if LibraryListeners is not None:
-            # Robot 3.0
-            self.library_listeners.set_log_level(level)
-        return self.set_level(level)
+        old = self.log_level
+        self.log_level = str(level).upper()
+        return old
 
-    def __enter__(self):
-        # save sys.stdout and sys.stderr for writing
-        self._out = sys.stdout
-        self._err = sys.stderr
-        #HACK: Dynamically (un)register Output:
-        LOGGER.disable_message_cache()
-        LOGGER.unregister_console_logger()
-        LOGGER.register_logger(self)
-        # Catch global logging:
-        self.logging_handler.__enter__()
-
-    def __exit__(self, *exc):
-        #HACK:
-        self.logging_handler.__exit__(*exc)
-        LOGGER.unregister_logger(self)
-        # unset internal streams
-        self._out = self._err = None
-
-    _re_log_level = re.compile('|'.join(r % '|'.join(LOG_LEVELS)
-      for r in [r'^\[ ?(%s) ?\] *', r'^\* ?(%s) ?\* *']))
-
-    def message(self, message):
-        msg = message.message
-        try:
-            _, brackets, stars, msg = self._re_log_level.split(msg)
-        except ValueError:
-            level = message.level
-        else:
-            level = brackets or stars
-        if not self._is_logged(level):
+    def log_message(self, message):
+        if self.quiet or threading.current_thread() is not self.thread:
             return
+        # (FAIL is not printed: the failure is raised to the caller anyway)
+        if message.level in ('FAIL', 'SKIP', 'NONE'):
+            return
+        level = LOG_LEVELS.get(message.level)
+        if level is not None and level >= LOG_LEVELS.get(self.log_level, 0):
+            print('[%s] %s' % (message.level, message.message),
+                  file=self.stream)
 
-        # select streams to use
-        if level == 'INFO':
-            stream = self._out or sys.__stdout__
-        else:
-            stream = self._err or sys.__stderr__
-        #... and finally write the message
-        stream.write("[ ")
-        try:
-            color = LOG_LEVEL_COLORS[level]
-        except KeyError:
-            stream.write(level)
-        else:
-            with Highlighter(color, stream) as hl:
-                hl.write(level)
-        stream.write(" ]%s %s\n" % (
-          ' ' * (LOG_LEVELS_MAX_WIDTH - len(level)), msg))
-
-    def fail(self, message, *args):
-        self._last_fail_exc = sys.exc_info()
-        AbstractLogger.fail(self, message, *args)
-
-    def register_error_listener(self, listener):
-        pass
-
-    def start_suite(self, suite):
-        pass
-
-    def end_suite(self, suite):
-        pass
-
-    def start_test(self, test):
-        pass
-
-    def end_test(self, test):
-        pass
-
-    def start_keyword(self, kw):
-        pass
-
-    def end_keyword(self, kw):
-        pass
+    def close(self):
+        LOGGER.unregister_logger(self)

@@ -19,7 +19,7 @@
 
 """robottools.utils.normbool
 
-normboolclass() creates moretools.boolclass() based classes
+normboolclass() creates moretools.strictbool() based classes
 with normalized true and false string value comparisons.
 
 .. moduleauthor:: Stefan Zimmermann <zimmermann.code@gmail.com>
@@ -30,7 +30,7 @@ __all__ = ['normboolclass', 'normbooltype']
 
 from six.moves import map
 
-from moretools import boolclass
+from moretools import strictbool as boolclass
 
 from robot.utils import normalize
 

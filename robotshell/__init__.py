@@ -23,10 +23,10 @@
 """
 __all__ = ['RobotMagicBase', 'Extension', 'load_robotshell']
 
-from robottools import __version__, __requires__, __extras__
+from robottools import __version__  # , __requires__, __extras__
 
-__requires__ += __extras__['robotshell'].checked
-del __extras__
+# __requires__ += __extras__['robotshell'].checked
+# del __extras__
 
 
 from .shell import RobotShell

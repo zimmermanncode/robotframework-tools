@@ -1,0 +1,7 @@
+/.idea/
+
+/.venv/
+__pycache__/
+*.pyc
+
+/robottools/__version__.py

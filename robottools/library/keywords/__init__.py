@@ -115,8 +115,8 @@ class Keyword(object):
                 yield arg
         if argspec.varargs:
             yield '*' + argspec.varargs
-        if argspec.keywords:
-            yield '**' + argspec.keywords
+        if argspec.varkw:
+            yield '**' + argspec.varkw
         # if the Library has any session handlers or context handlers
         # with activated auto_explicit option
         # then always provide **kwargs
@@ -196,25 +196,21 @@ class Keyword(object):
                 if context in self.libinstance.contexts:
                     func = context_func
             # Does the keyword support **kwargs?
-            if self.func.argspec.keywords or not kwargs:
+            if self.func.argspec.varkw or not kwargs:
                 try:
                     result = func(self.libinstance, *args, **kwargs)
                 except Exception:
                     error = sys.exc_info()
             else:
-                # resolve **kwargs to positional args...
-                posargs = []
-                # (argspec.args start index includes self)
-                for name in self.func.argspec.args[1 + len(args):]:
-                    if name in kwargs:
-                        posargs.append(kwargs.pop(name))
-                # and turn the rest into *varargs in 'key=value' style
+                # Named arguments that match parameters are passed by name
+                # (resolving them to positions shifted every one after a skipped parameter),
+                # the rest becomes *varargs in 'key=value' style:
                 varargs = ['%s=%s' % (key, kwargs.pop(key))
                            for key in list(kwargs)
                            if key not in self.func.argspec.args]
                 try:
                     result = func(self.libinstance,
-                                  *chain(args, posargs, varargs),
+                                  *chain(args, varargs),
                                   # if **kwargs left ==> TypeError from Python
                                   **kwargs)
                 except:
